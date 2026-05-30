@@ -1,4 +1,4 @@
-# 🐍 Hand Gesture Snake
+# 🐍 SlithAR: A Vision-Driven Gesture Control System for Arcade Gaming
 
 A browser-based Snake game controlled by hand gestures via your webcam, using MediaPipe Hands for real-time computer vision.
 
@@ -34,7 +34,7 @@ snake-gesture-game/
 
 ## 🚀 Getting Started
 
-### Option A — VS Code Live Server (recommended)
+### Option A — VS Code Live Server
 1. Install the **Live Server** extension in VS Code
 2. Right-click `index.html` → **Open with Live Server**
 
@@ -89,17 +89,6 @@ Key shapes:
 - Use the **mock emitter** to test without needing the camera
 - Use **keyboard mode** to test without needing gestures at all
 - Communicate on Discord/Slack before changing `contracts.js`
-
----
-
-## 🗺 Milestone Plan
-
-| Day | Goal |
-|-----|------|
-| 1 | Everyone reads `contracts.js` and agrees on the interface |
-| 2–3 | Each member builds their module independently |
-| 4 | Member 4 integrates in `main.js`; smoke test all together |
-| 5 | Gesture tuning, bug fixes, polish |
 
 ---
 
