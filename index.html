@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🐍 Hand Gesture Snake</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+
+  <!-- MediaPipe (Member 2 needs these) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* ─── Reset ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ─── Design Tokens ─────────────────────────────────────────── */
+    :root {
+      --bg:         #08080e;
+      --surface:    #0f0f1a;
+      --surface2:   #14141f;
+      --border:     rgba(255,255,255,0.07);
+      --border2:    rgba(255,255,255,0.13);
+      --accent:     #00ff88;
+      --accent-dim: rgba(0,255,136,0.15);
+      --danger:     #ff3355;
+      --gold:       #ffd700;
+      --cyan:       #00eeff;
+      --blue:       #7788ff;
+      --text:       #d8d8e8;
+      --muted:      rgba(216,216,232,0.38);
+      --font-mono:  'Share Tech Mono', 'Courier New', monospace;
+      --font-hud:   'Orbitron', 'Courier New', monospace;
+    }
+
+    /* ─── Base ──────────────────────────────────────────────────── */
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Scanline overlay ──────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* ─── Header ────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .logo {
+      font-family: var(--font-hud);
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: var(--accent);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .logo span { color: var(--danger); }
+
+    .hud-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .hud-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .hud-label {
+      font-size: 0.55rem;
+      color: var(--muted);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    .hud-value {
+      font-family: var(--font-hud);
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+    #score-display { color: var(--accent); }
+    #high-score-display { font-size: 0.72rem; color: var(--gold); margin-top: 2px; }
+    #level-display  { color: var(--cyan); }
+
+    #combo-display {
+      font-family: var(--font-hud);
+      font-size: 0.9rem;
+      color: var(--gold);
+      min-width: 90px;
+      text-align: right;
+      transition: opacity 0.2s;
+    }
+    #combo-display:empty { opacity: 0; }
+    .combo-active { animation: comboPop 0.25s ease; }
+    @keyframes comboPop {
+      0%   { transform: scale(1.4); }
+      100% { transform: scale(1); }
+    }
+
+    .flash { animation: scorePop 0.3s ease; }
+    @keyframes scorePop {
+      0%   { transform: scale(1.5); color: #fff; }
+      100% { transform: scale(1); }
+    }
+
+    /* ─── Main Layout ───────────────────────────────────────────── */
+    main {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    /* ─── Game Canvas ───────────────────────────────────────────── */
+    .canvas-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    #game-canvas {
+      display: block;
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      box-shadow:
+        0 0 0 1px rgba(0,255,136,0.06),
+        0 0 40px rgba(0,255,136,0.04),
+        inset 0 0 60px rgba(0,0,0,0.4);
+    }
+
+    /* ─── Side Panels (left = camera, right = controls) ─────────── */
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 260px;
+      flex-shrink: 0;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 200px;
+      flex-shrink: 0;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .card-title {
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ─── Gesture Panel ─────────────────────────────────────────── */
+    #gesture-display {
+      font-size: 1rem;
+      color: var(--muted);
+      transition: color 0.15s;
+      min-height: 1.4em;
+      letter-spacing: 0.04em;
+    }
+    .gesture-active { color: var(--accent) !important; }
+
+    /* ─── Active Effects ────────────────────────────────────────── */
+    #effects-display {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-height: 24px;
+    }
+    .effect-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      border: 1px solid;
+    }
+    .effect-shield     { color: #00eeff; border-color: rgba(0,238,255,0.3); background: rgba(0,238,255,0.08); }
+    .effect-multiplier { color: #ffd700; border-color: rgba(255,215,0,0.3); background: rgba(255,215,0,0.08); }
+    .effect-slow       { color: #7788ff; border-color: rgba(119,136,255,0.3); background: rgba(119,136,255,0.08); }
+
+    /* ─── Buttons ───────────────────────────────────────────────── */
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 9px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+    button:disabled { opacity: 0.28; cursor: default; }
+    button.danger:hover:not(:disabled) {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(255,51,85,0.12);
+    }
+
+    /* ─── Power-up Legend ───────────────────────────────────────── */
+    .legend {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .legend-icon {
+      width: 22px;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .legend-name { color: var(--text); font-size: 0.73rem; }
+    .legend-desc { color: var(--muted); font-size: 0.65rem; margin-top: 1px; }
+
+    /* ─── Help ──────────────────────────────────────────────────── */
+    .help-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .help-list kbd {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+    }
+
+    /* ─── Camera Feed ───────────────────────────────────────────── */
+    .camera-wrap {
+      position: relative;
+      display: block;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(0,255,136,0.06);
+    }
+    .camera-wrap.is-off::before {
+      content: 'CAMERA OFFLINE';
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      color: var(--muted); font-size: 0.7rem; letter-spacing: 0.2em;
+      pointer-events: none;
+    }
+    #camera-feed, #camera-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+    }
+    #camera-feed    { object-fit: cover; opacity: 0.85; transform: scaleX(-1); }
+    #camera-overlay { pointer-events: none; } /* not mirrored — JS mirrors landmarks so text stays readable */
+
+    /* ─── Proximity Meter ───────────────────────────────────────── */
+    .prox-meter { display: flex; flex-direction: column; gap: 8px; }
+
+    .prox-track {
+      position: relative;
+      height: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .prox-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--blue) 0%, var(--accent) 60%, var(--gold) 90%);
+      transition: width 90ms linear, background 250ms ease;
+      box-shadow: 0 0 6px rgba(0,255,136,0.35);
+    }
+    .prox-fill.hot {
+      background: linear-gradient(90deg, var(--gold) 0%, var(--danger) 100%);
+      box-shadow: 0 0 8px rgba(255,51,85,0.55);
+    }
+    .prox-ticks {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 6px;
+      pointer-events: none;
+    }
+    .prox-ticks span {
+      width: 1px;
+      background: rgba(255,255,255,0.10);
+    }
+
+    .prox-row, .prox-speed-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .prox-axis       { color: var(--muted); }
+    .prox-label      { color: var(--accent); font-family: var(--font-hud); font-size: 0.7rem; letter-spacing: 0.1em; }
+    .prox-speed-label { color: var(--muted); font-size: 0.6rem; letter-spacing: 0.18em; }
+    .prox-speed       {
+      font-family: var(--font-hud);
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--gold);
+    }
+
+    /* ─── Toast ─────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: 0.85rem;
+      letter-spacing: 0.06em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    #toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    #toast.toast-shield     { color: var(--cyan);   border-color: rgba(0,238,255,0.4); }
+    #toast.toast-powerup    { color: var(--gold);   border-color: rgba(255,215,0,0.4); }
+    #toast.toast-level      { color: var(--accent); border-color: rgba(0,255,136,0.4); }
+    #toast.toast-record     { color: var(--gold);   border-color: var(--gold); }
+    #toast.toast-muted      { color: var(--muted); }
+
+    /* ─── Footer ────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 12px;
+      font-size: 0.6rem;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header / Global HUD ───────────────────────────────────── -->
+  <header>
+    <div class="logo">🐍 <span>S</span>NAKE</div>
+    <div class="hud-row">
+      <div class="hud-block">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="score-display">0</span>
+        <span id="high-score-display">Best: 0</span>
+      </div>
+      <div class="hud-block">
+        <span class="hud-label">Level</span>
+        <span class="hud-value" id="level-display">LVL 1</span>
+      </div>
+      <div class="hud-block">
+        <span id="combo-display"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ──────────────────────────────────────────────────── -->
+  <main>
+    <!-- Left panel: camera feed + debug -->
+    <aside class="left-panel">
+
+      <!-- Camera feed -->
+      <div class="panel-card">
+        <div class="card-title">Camera</div>
+        <div class="camera-wrap is-off" id="camera-wrap">
+          <video id="camera-feed" autoplay playsinline muted></video>
+          <canvas id="camera-overlay"></canvas>
+        </div>
+      </div>
+
+      <!-- Hand-proximity speed meter -->
+      <div class="panel-card prox-card">
+        <div class="card-title">Hand Distance → Speed</div>
+        <div class="prox-meter">
+          <div class="prox-track">
+            <div class="prox-fill" id="prox-fill"></div>
+            <div class="prox-ticks">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="prox-row">
+            <span class="prox-axis">FAR</span>
+            <span class="prox-label" id="prox-label">— no hand —</span>
+            <span class="prox-axis">CLOSE</span>
+          </div>
+          <div class="prox-speed-row">
+            <span class="prox-speed-label">Snake speed</span>
+            <span class="prox-speed" id="prox-speed">1.00×</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera debug info (shown when USE_CAMERA=true and camera ready) -->
+      <div class="panel-card" id="camera-debug-card" style="display:none">
+        <div class="card-title">Camera Debug</div>
+        <div id="camera-debug">
+          <div class="debug-row">
+            <span>Detected</span>
+            <span id="dbg-direction">—</span>
+          </div>
+          <div class="debug-row">
+            <span>Confidence</span>
+            <span id="dbg-confidence">—</span>
+          </div>
+          <div class="debug-row">
+            <span>Stability</span>
+            <div class="stability-dots">
+              <div class="stability-dot" id="stab-0"></div>
+              <div class="stability-dot" id="stab-1"></div>
+            </div>
+          </div>
+          <div class="debug-row">
+            <span>Fingers</span>
+            <div class="finger-bars">
+              <div class="finger-bar"><div class="finger-indicator" id="fi-index"></div><span>IDX</span></div>
+              <div class="finger-bar"><div class="finger-indicator" id="fi-middle"></div><span>MID</span></div>
+              <div class="finger-bar"><div class="finger-indicator" id="fi-ring"></div><span>RNG</span></div>
+              <div class="finger-bar"><div class="finger-indicator" id="fi-pinky"></div><span>PNK</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Game board -->
+    <div class="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Side panel -->
+    <div class="side-panel">
+
+      <!-- Gesture readout -->
+      <div class="panel-card">
+        <div class="card-title">Input</div>
+        <div id="gesture-display">— waiting —</div>
+      </div>
+
+      <!-- Active power-up effects -->
+      <div class="panel-card">
+        <div class="card-title">Active Effects</div>
+        <div id="effects-display"></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="panel-card">
+        <div class="card-title">Controls</div>
+        <div class="btn-group">
+          <button id="btn-start">▶ Start</button>
+          <button id="btn-pause" disabled>⏸ Pause</button>
+          <button id="btn-reset" class="danger" disabled>↺ Reset</button>
+        </div>
+      </div>
+
+      <!-- Power-up legend -->
+      <div class="panel-card">
+        <div class="card-title">Power-Ups</div>
+        <div class="legend">
+          <div class="legend-item">
+            <span class="legend-icon">🛡</span>
+            <div>
+              <div class="legend-name" style="color:#00eeff">SHIELD</div>
+              <div class="legend-desc">Absorb one collision</div>
+            </div>
+          </div>
+          <div class="legend-item">
+            <span class="legend-icon">×2</span>
+            <div>
+              <div class="legend-name" style="color:#ffd700">MULTIPLIER</div>
+              <div class="legend-desc">Double points for 8s</div>
+            </div>
+          </div>
+          <div class="legend-item">
+            <span class="legend-icon">❄</span>
+            <div>
+              <div class="legend-name" style="color:#7788ff">SLOW</div>
+              <div class="legend-desc">Half speed for 5s</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyboard help -->
+      <div class="panel-card">
+        <div class="card-title">Keyboard</div>
+        <div class="help-list">
+          <div><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>
+          <div><kbd>Space</kbd> — Start / Pause</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ── Footer ────────────────────────────────────────────────── -->
+  <footer>Hand Gesture Snake &nbsp;·&nbsp; CS Project &nbsp;·&nbsp; Open with Live Server</footer>
+
+  <!-- ── Toast ─────────────────────────────────────────────────── -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <!-- ── Entry ─────────────────────────────────────────────────── -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
