@@ -1,6 +1,10 @@
-# 🐍 SlithAR: A Vision-Driven Gesture Control System for Arcade Gaming
+# SlithAR: A Vision-Driven Gesture Control System for Arcade Gaming 🐍
+
+[![DOI](https://img.shields.io/badge/DOI-10.13140%2FRG.2.2.10554.35526-blue)](https://doi.org/10.13140/RG.2.2.10554.35526)
 
 A browser-based Snake game controlled by hand gestures via your webcam, using MediaPipe Hands for real-time computer vision.
+
+📖 **Read the paper:** [SlithAR: A Vision-Driven Gesture Control System for Arcade Gaming](https://doi.org/10.13140/RG.2.2.10554.35526)
 
 ---
 
